@@ -67,7 +67,7 @@ pub fn get_windows(session_name: &str) -> Result<TmuxResponse> {
     }
 }
 
-fn _get_panes(session_name: &str, window_index: u32) -> io::Result<Output> {
+fn _get_panes(session_name: &str, window_index: u64) -> io::Result<Output> {
     let target = format!("{}:{}", session_name, window_index);
     Command::new("tmux")
             .args([
@@ -80,7 +80,7 @@ fn _get_panes(session_name: &str, window_index: u32) -> io::Result<Output> {
             .output()
 }
 
-pub fn get_panes(session_name: &str, window_index: u32) -> Result<TmuxResponse> {
+pub fn get_panes(session_name: &str, window_index: u64) -> Result<TmuxResponse> {
     let target = format!("{}:{}", session_name, window_index);
     match _get_panes(session_name, window_index) {
         Ok(output) if output.status.success() => {
@@ -132,6 +132,74 @@ pub fn capture_pane(
         Err(e) => Err(anyhow!(
             "failed to capture pane '{}': occured {}",
             target,
+            e
+        )),
+    }
+}
+
+fn _kill_session(session_name: &str) -> io::Result<Output> {
+    Command::new("tmux")
+        .args(["kill-session", "-t", session_name])
+        .output()
+}
+
+pub fn kill_session(session_name: &str) -> Result<()> {
+    match _kill_session(session_name) {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => Err(anyhow!(
+            "failed to kill session '{}': output={:?}",
+            session_name,
+            output
+        )),
+        Err(e) => Err(anyhow!(
+            "failed to kill session '{}': occured {}",
+            session_name,
+            e
+        )),
+    }
+}
+
+fn _new_session(session_name: &str) -> io::Result<Output> {
+    Command::new("tmux")
+        .args(["new-session", "-d", "-s", session_name])
+        .output()
+}
+
+pub fn new_session(session_name: &str) -> Result<()> {
+    match _new_session(session_name) {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => Err(anyhow!(
+            "failed to new session '{}': output={:?}",
+            session_name,
+            output
+        )),
+        Err(e) => Err(anyhow!(
+            "failed to new session '{}': occured {}",
+            session_name,
+            e
+        )),
+    }
+}
+
+fn _rename_session(old_session_name: &str, new_session_name: &str) -> io::Result<Output> {
+    Command::new("tmux")
+        .args(["rename-session", "-t", old_session_name, new_session_name])
+        .output()
+}
+
+pub fn rename_session(old_session_name: &str, new_session_name: &str) -> Result<()> {
+    match _rename_session(old_session_name, new_session_name) {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => Err(anyhow!(
+            "failed to rename session from '{}' to '{}': output={:?}",
+            old_session_name,
+            new_session_name,
+            output
+        )),
+        Err(e) => Err(anyhow!(
+            "failed to rename session from '{}' to '{}': occured {}",
+            old_session_name,
+            new_session_name,
             e
         )),
     }

@@ -1,14 +1,38 @@
 use anyhow::Result;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
-use std::path::PathBuf;
+
+pub enum TmuxCommand<'a> {
+    NewSession {
+        session_name: &'a str,
+    },
+    KillSession {
+        session_name: &'a str,
+    },
+    RenameSession {
+        old_session_name: &'a str,
+        new_session_name: &'a str,
+    },
+    CapturePane {
+        session_name: &'a str,
+        window_index: u64,
+        pane_index: u64,
+    },
+    GetSessions,
+    GetWindows {
+        session_name: &'a str,
+    },
+    GetPanes {
+        session_name: &'a str,
+        window_index: u64,
+    },
+}
 
 pub enum TmuxResponse {
     PaneCapture(TmuxCapturePane),
     Sessios(Vec<TmuxSession>),
     Windows(Vec<TmuxWindow>),
     Panes(Vec<TmuxPane>),
-    NewServer { name: String, socket_path: PathBuf },
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +101,7 @@ pub struct TmuxPane {
     pub current_command: String,
 }
 
+/// helper function for deserializing integer to bool
 fn bool_from_int<'a, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: Deserializer<'a>,

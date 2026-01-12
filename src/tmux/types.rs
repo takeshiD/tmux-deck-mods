@@ -1,68 +1,89 @@
-use serde::Deserialize;
+use anyhow::Result;
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use std::path::PathBuf;
 
 pub enum TmuxResponse {
-    PaneCapture { target: String, content: String },
+    PaneCapture(TmuxCapturePane),
     Sessios(Vec<TmuxSession>),
     Windows(Vec<TmuxWindow>),
     Panes(Vec<TmuxPane>),
     NewServer { name: String, socket_path: PathBuf },
 }
 
+#[derive(Debug, Clone)]
+pub struct TmuxCapturePane {
+    pub session_name: String,
+    pub window_index: u64,
+    pub pane_index: u64,
+    pub buffer: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct TmuxSession {
-    #[serde(alias = "session_id")]
+    #[serde(rename = "session_id")]
     pub id: String,
-    #[serde(alias = "session_index")]
-    pub index: u32,
-    #[serde(alias = "session_name")]
+    // #[serde(rename = "session_index")]
+    // pub index: u64,
+    #[serde(rename = "session_name")]
     pub name: String,
-    #[serde(alias = "session_attached")]
+    #[serde(rename = "session_attached", deserialize_with = "bool_from_int")]
     pub attached: bool,
-    #[serde(alias = "session_activity")]
-    pub activity: u32,
+    #[serde(rename = "session_activity")]
+    pub activity: u64,
     #[serde(skip)]
     pub windows: Vec<TmuxWindow>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TmuxWindow {
-    #[serde(alias = "window_id")]
+    #[serde(rename = "window_id")]
     pub id: String,
-    #[serde(alias = "window_index")]
-    pub index: u32,
-    #[serde(alias = "window_name")]
+    #[serde(rename = "window_index")]
+    pub index: u64,
+    #[serde(rename = "window_name")]
     pub name: String,
-    #[serde(alias = "window_activity")]
-    pub activity: u32,
-    #[serde(alias = "window_width")]
-    pub width: u32,
-    #[serde(alias = "window_height")]
-    pub height: u32,
-    #[serde(alias = "window_cell_width")]
-    pub cell_width: u32,
-    #[serde(alias = "window_cell_height")]
-    pub cell_height: u32,
-    #[serde(alias = "window_zoomed_flag")]
-    pub is_zoomed: u32,
-    #[serde(alias = "window_marked_flag")]
-    pub is_marked: u32,
+    #[serde(rename = "window_activity")]
+    pub activity: u64,
+    #[serde(rename = "window_width")]
+    pub width: u64,
+    #[serde(rename = "window_height")]
+    pub height: u64,
+    #[serde(rename = "window_cell_width")]
+    pub cell_width: u64,
+    #[serde(rename = "window_cell_height")]
+    pub cell_height: u64,
+    #[serde(rename = "window_zoomed_flag", deserialize_with = "bool_from_int")]
+    pub is_zoomed: bool,
+    #[serde(rename = "window_marked_flag", deserialize_with = "bool_from_int")]
+    pub is_marked: bool,
     #[serde(skip)]
     pub panes: Vec<TmuxPane>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TmuxPane {
-    #[serde(alias = "pane_id")]
+    #[serde(rename = "pane_id")]
     pub id: String,
-    #[serde(alias = "pane_index")]
-    pub index: u32,
-    #[serde(alias = "pane_width")]
-    pub width: u32,
-    #[serde(alias = "pane_height")]
-    pub height: u32,
-    #[serde(alias = "pane_active")]
+    #[serde(rename = "pane_index")]
+    pub index: u64,
+    #[serde(rename = "pane_width")]
+    pub width: u64,
+    #[serde(rename = "pane_height")]
+    pub height: u64,
+    #[serde(rename = "pane_active", deserialize_with = "bool_from_int")]
     pub active: bool,
-    #[serde(alias = "pane_current_command")]
+    #[serde(rename = "pane_current_command")]
     pub current_command: String,
+}
+
+fn bool_from_int<'a, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'a>,
+{
+    let v = Value::deserialize(deserializer)?;
+    match v {
+        Value::Number(n) => Ok(n.as_i64().unwrap_or(0) != 0),
+        _ => Err(serde::de::Error::custom("invalid value")),
+    }
 }

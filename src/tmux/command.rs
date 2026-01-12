@@ -1,36 +1,14 @@
-use crate::tmux::types::{TmuxPane, TmuxResponse, TmuxSession, TmuxWindow};
+use crate::tmux::types::{TmuxCapturePane, TmuxPane, TmuxResponse, TmuxSession, TmuxWindow};
 use anyhow::{Result, anyhow};
 use std::io;
 use std::process::{Command, Output};
-
-pub fn capture_pane(target: &str) -> Result<TmuxResponse> {
-    let output = Command::new("tmux")
-        .args(["capture-pane", "-e", "-p", "-J", "-t", target])
-        .output();
-    match output {
-        Ok(output) if output.status.success() => Ok(TmuxResponse::PaneCapture {
-            target: target.to_string(),
-            content: String::from_utf8_lossy(&output.stdout).to_string(),
-        }),
-        Ok(output) => Err(anyhow!(
-            "failed to capture pane '{}': output={:?}",
-            target,
-            output
-        )),
-        Err(e) => Err(anyhow!(
-            "failed to capture pane '{}': occured {}",
-            target,
-            e
-        )),
-    }
-}
 
 fn _get_sessions() -> io::Result<Output> {
     Command::new("tmux")
             .args([
                 "list-sessions",
                 "-F",
-                "{\"session_id\": \"#{session_id}\",\"session_index\": \"#{session_index}\",\"session_name\": \"#{session_name}\",  \"session_attached\": \"#{session_attached}\", \"session_activity\": \"#{session_activity}\"}",
+                "{\"session_id\": \"#{session_id}\",\"session_name\": \"#{session_name}\",  \"session_attached\": #{session_attached}, \"session_activity\": #{session_activity}}",
             ])
             .output()
 }
@@ -39,11 +17,13 @@ pub fn get_sessions() -> Result<TmuxResponse> {
     match _get_sessions() {
         Ok(output) if output.status.success() => {
             let content = str::from_utf8(&output.stdout)?;
-            let panes: Vec<TmuxPane> = content
+            let sessions: Vec<TmuxSession> = content
                 .lines()
-                .map(|line| serde_json::from_str(line).expect("failed to parse tmux pane string"))
+                .map(|line| {
+                    serde_json::from_str(line).expect("failed to parse tmux session string")
+                })
                 .collect();
-            Ok(TmuxResponse::Panes(panes))
+            Ok(TmuxResponse::Sessios(sessions))
         }
         Ok(output) => Err(anyhow!("failed to get sessions: output={:?}", output)),
         Err(e) => Err(anyhow!("failed to get sessions: occured {}", e)),
@@ -57,7 +37,7 @@ fn _get_windows(session_name: &str) -> io::Result<Output> {
                 "-t",
                 session_name,
                 "-F",
-                "{\"window_id\": \"#{window_id}\", \"window_index\": \"#{window_index}\", \"window_name\": \"#{window_name}\", \"window_activity\": \"#{window_activity}\", \"window_width\": \"#{window_width}\", \"window_height\": \"#{window_height}\", \"window_cell_width\": \"#{window_cell_width}\", \"window_cell_height\": \"#{window_cell_height}\"}, \"window_zoomed_flag\": \"#{window_zoomed_flag}\", \"window_marked_flag\": \"#{window_markd_flag}\"}",
+                "{\"window_id\": \"#{window_id}\", \"window_index\": #{window_index}, \"window_name\": \"#{window_name}\", \"window_activity\": #{window_activity}, \"window_width\": #{window_width}, \"window_height\": #{window_height}, \"window_cell_width\": #{window_cell_width}, \"window_cell_height\": #{window_cell_height}, \"window_zoomed_flag\": #{window_zoomed_flag}, \"window_marked_flag\": #{window_marked_flag}}",
             ])
             .output()
 }
@@ -66,11 +46,13 @@ pub fn get_windows(session_name: &str) -> Result<TmuxResponse> {
     match _get_windows(session_name) {
         Ok(output) if output.status.success() => {
             let content = str::from_utf8(&output.stdout)?;
-            let panes: Vec<TmuxPane> = content
+            let windows: Vec<TmuxWindow> = content
                 .lines()
-                .map(|line| serde_json::from_str(line).expect("failed to parse tmux pane string"))
+                .map(|line| {
+                    serde_json::from_str(line).expect("failed to parse tmux windows string")
+                })
                 .collect();
-            Ok(TmuxResponse::Panes(panes))
+            Ok(TmuxResponse::Windows(windows))
         }
         Ok(output) => Err(anyhow!(
             "failed to get windows info in '{}': output={:?}",
@@ -93,7 +75,7 @@ fn _get_panes(session_name: &str, window_index: u32) -> io::Result<Output> {
                 "-t",
                 &target,
                 "-F",
-                "\"pane_id\": \"#{pane_id}\", \"pane_index\": \"#{pane_index}\", \"pane_width\": \"#{pane_width}\", \"pane_height\": \"#{pane_height}\", \"pane_active\": \"#{pane_active}\", \"pane_last\": \"#{pane_last}\", \"pane_current_command\": \"#{pane_current_command}\"",
+                "{\"pane_id\": \"#{pane_id}\", \"pane_index\": #{pane_index}, \"pane_width\": #{pane_width}, \"pane_height\": #{pane_height}, \"pane_active\": #{pane_active}, \"pane_current_command\": \"#{pane_current_command}\"}",
             ])
             .output()
 }
@@ -122,46 +104,60 @@ pub fn get_panes(session_name: &str, window_index: u32) -> Result<TmuxResponse> 
     }
 }
 
+fn _capture_pane(session_name: &str, window_index: u64, pane_index: u64) -> io::Result<Output> {
+    let target = format!("{session_name}:{window_index}.{pane_index}");
+    Command::new("tmux")
+        .args(["capture-pane", "-e", "-p", "-J", "-t", &target])
+        .output()
+}
+
+pub fn capture_pane(
+    session_name: &str,
+    window_index: u64,
+    pane_index: u64,
+) -> Result<TmuxResponse> {
+    let target = format!("{session_name}:{window_index}.{pane_index}");
+    match _capture_pane(session_name, window_index, pane_index) {
+        Ok(output) if output.status.success() => Ok(TmuxResponse::PaneCapture(TmuxCapturePane {
+            session_name: session_name.to_string(),
+            window_index,
+            pane_index,
+            buffer: String::from_utf8_lossy(&output.stdout).to_string(),
+        })),
+        Ok(output) => Err(anyhow!(
+            "failed to capture pane '{}': output={:?}",
+            target,
+            output
+        )),
+        Err(e) => Err(anyhow!(
+            "failed to capture pane '{}': occured {}",
+            target,
+            e
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::Result;
-    use std::path::{Path, PathBuf};
-    use std::process::{Command, Output};
-    struct TestTmuxServer {
-        socket_path: PathBuf,
-    }
-    impl TestTmuxServer {
-        fn new(socket_path: &str) -> Result<Self> {
-            let output = Command::new("tmux")
-                .args(["-S", socket_path, "new"])
-                .output();
-            match output {
-                Ok(output) if output.status.success() => Ok(Self {
-                    socket_path: PathBuf::from(socket_path),
-                }),
-                _ => Err(anyhow!("failed to create tmux server")),
-            }
-        }
-    }
-    impl Drop for TestTmuxServer {
-        fn drop(&mut self) {
-            let socket_path = self.socket_path.to_str().expect("failed to convert str");
-            Command::new("tmux")
-                .args(["-S", socket_path, "kill-server"])
-                .output();
-            std::fs::remove_file(socket_path);
-        }
-    }
-    fn enter_tmux_server(sock_name: &str) {
-        let output = Command::new("tmux")
-            .args(["-S", &format!("/tmp/{sock_name}"), "new"])
-            .output();
-        match output {
-            Ok(output) if output.status.success() => Ok(),
-        }
-    }
-    fn kill_server_exit() {}
     #[test]
-    fn test_get_sessions() {}
+    fn test_get_sessions() {
+        let sessions = get_sessions();
+        assert!(sessions.is_ok());
+    }
+    #[test]
+    fn test_get_windows() {
+        let windows = get_windows("tmux-deck");
+        assert!(windows.is_ok());
+    }
+    #[test]
+    fn test_get_panes() {
+        let panes = get_panes("tmux-deck", 0);
+        assert!(panes.is_ok());
+    }
+    #[test]
+    fn test_capture_pane() {
+        let panes = capture_pane("dotfiles", 0, 0);
+        assert!(panes.is_ok());
+    }
 }
